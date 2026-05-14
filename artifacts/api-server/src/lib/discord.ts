@@ -11,6 +11,7 @@ import {
   SlashCommandBuilder,
   PermissionFlagsBits,
 } from "discord.js";
+import OpenAI from "openai";
 
 import { db } from "@workspace/db";
 import { applicationsTable, blacklistTable } from "@workspace/db";
@@ -111,22 +112,22 @@ async function registerCommands() {
   const commands = [
     new SlashCommandBuilder()
       .setName("blacklist")
-      .setDescription("Blacklist a user")
+      .setDescription("Blacklist a user from applying")
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
       .addUserOption((o) =>
-        o.setName("user").setRequired(true)
+        o.setName("user").setDescription("The user to blacklist").setRequired(true)
       )
       .addStringOption((o) =>
-        o.setName("reason").setRequired(false)
+        o.setName("reason").setDescription("Reason for blacklisting").setRequired(false)
       )
       .toJSON(),
 
     new SlashCommandBuilder()
       .setName("unblacklist")
-      .setDescription("Remove blacklist")
+      .setDescription("Remove a user from the blacklist")
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
       .addUserOption((o) =>
-        o.setName("user").setRequired(true)
+        o.setName("user").setDescription("The user to unblacklist").setRequired(true)
       )
       .toJSON(),
   ];
@@ -314,6 +315,43 @@ discordClient.on("interactionCreate", async (interaction) => {
 });
 
 /* =========================================================
+   OPENAI CLIENT
+========================================================= */
+const openai = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY!,
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL!,
+});
+
+/* =========================================================
+   AI APPLICATION CHECKER
+========================================================= */
+async function runAICheck(application: Application): Promise<string> {
+  const prompt = `You are a staff reviewer for a Discord community. Analyze this staff application and give a short, honest assessment for the review team.
+
+Application:
+- Role applying for: ${application.role}
+- Age: ${application.age}
+- Timezone: ${application.timezone}
+- Availability: ${application.availability}
+- Past experience: ${application.experience}
+- Why they want to join: ${application.whyJoin}
+
+Respond in this exact format (be concise, max 3 lines each):
+**Overall Score:** X/10
+**Strengths:** [1–3 bullet points]
+**Concerns:** [1–3 bullet points or "None"]
+**Recommendation:** Accept / Lean Accept / Neutral / Lean Deny / Deny — [one sentence reason]`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-5-mini",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: 300,
+  });
+
+  return response.choices[0]?.message?.content ?? "AI check unavailable.";
+}
+
+/* =========================================================
    APPLICATION SENDER
 ========================================================= */
 export async function sendApplicationToDiscord(application: Application) {
@@ -321,28 +359,77 @@ export async function sendApplicationToDiscord(application: Application) {
     STAFF_CHANNEL_ID
   )) as TextChannel;
 
-  const embed = new EmbedBuilder()
-    .setTitle(`New ${application.role} Application`)
-    .setColor(0x5865f2)
+  /* ---------- SHORT SUMMARY EMBED (main channel message) ---------- */
+  const roleColors: Record<string, number> = {
+    Moderator: 0x5865f2,
+    "Human Resources": 0x57f287,
+    Partnership: 0xfee75c,
+  };
+
+  const summaryEmbed = new EmbedBuilder()
+    .setTitle(`📋 New ${application.role} Application`)
+    .setColor(roleColors[application.role] ?? 0x5865f2)
     .addFields(
-      { name: "User", value: application.discordUsername },
-      { name: "Role", value: application.role }
+      { name: "👤 Applicant", value: `${application.discordUsername} (\`${application.discordId}\`)`, inline: true },
+      { name: "🎯 Role", value: application.role, inline: true },
+      { name: "🎂 Age", value: String(application.age), inline: true },
+      { name: "🕐 Timezone", value: application.timezone, inline: true },
+      { name: "📅 Availability", value: application.availability, inline: true },
     )
-    .setFooter({ text: `ID: ${application.id}` });
+    .setFooter({ text: `Application ID: ${application.id} • ${new Date(application.createdAt).toUTCString()}` });
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
       .setCustomId(`accept_${String(application.id)}`)
-      .setLabel("Accept")
+      .setLabel("✅ Accept")
       .setStyle(ButtonStyle.Success),
-
     new ButtonBuilder()
       .setCustomId(`deny_${String(application.id)}`)
-      .setLabel("Deny")
-      .setStyle(ButtonStyle.Danger)
+      .setLabel("❌ Deny")
+      .setStyle(ButtonStyle.Danger),
   );
 
-  await channel.send({ embeds: [embed], components: [row] });
+  const mainMessage = await channel.send({ embeds: [summaryEmbed], components: [row] });
+
+  /* ---------- THREAD: FULL APPLICATION ---------- */
+  const thread = await mainMessage.startThread({
+    name: `${application.role} — ${application.discordUsername} (#${application.id})`,
+    autoArchiveDuration: 10080, // 7 days
+  });
+
+  const fullEmbed = new EmbedBuilder()
+    .setTitle(`Full Application — ${application.discordUsername}`)
+    .setColor(0x2b2d31)
+    .addFields(
+      { name: "🎯 Role", value: application.role },
+      { name: "👤 Discord", value: `${application.discordUsername} (\`${application.discordId}\`)` },
+      { name: "🎂 Age", value: String(application.age) },
+      { name: "🕐 Timezone", value: application.timezone },
+      { name: "📅 Availability", value: application.availability },
+      { name: "📖 Past Experience", value: application.experience },
+      { name: "💬 Why They Want to Join", value: application.whyJoin },
+    )
+    .setFooter({ text: `Submitted • Application #${application.id}` })
+    .setTimestamp(application.createdAt);
+
+  await thread.send({ embeds: [fullEmbed] });
+
+  /* ---------- THREAD: AI CHECKER ---------- */
+  await thread.send({ content: "🤖 **Running AI check…**" });
+
+  try {
+    const aiResult = await runAICheck(application);
+    const aiEmbed = new EmbedBuilder()
+      .setTitle("🤖 AI Staff Checker")
+      .setDescription(aiResult)
+      .setColor(0x9b59b6)
+      .setFooter({ text: "AI analysis — use your own judgment" });
+
+    await thread.send({ embeds: [aiEmbed] });
+  } catch (err) {
+    logger.error({ err }, "AI check failed");
+    await thread.send({ content: "⚠️ AI check failed. Please review manually." });
+  }
 }
 
 /* =========================================================
