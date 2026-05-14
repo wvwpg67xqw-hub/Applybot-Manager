@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRoute, useLocation } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Loader2, Send } from "lucide-react";
+import { ArrowLeft, Loader2, Send, Clock } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import LoginPage from "@/pages/login";
@@ -36,6 +36,7 @@ export default function Apply() {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
   const { user, isLoading: authLoading, isAuthenticated, login } = useAuth();
+  const [cooldownUntil, setCooldownUntil] = useState<Date | null>(null);
 
   const roleParam = params?.role ? decodeURIComponent(params.role) : "";
   const initialRole = (ROLES as readonly string[]).includes(roleParam)
@@ -70,10 +71,28 @@ export default function Apply() {
       onSuccess: () => {
         setLocation("/success");
       },
-      onError: () => {
+      onError: async (err: unknown) => {
+        let message = "There was an error submitting your application. Please try again.";
+        let retryAfter: string | null = null;
+
+        const response = (err as { response?: Response })?.response;
+        if (response) {
+          try {
+            const body = await response.clone().json();
+            if (body?.error) message = body.error;
+            if (body?.retryAfter) retryAfter = body.retryAfter;
+          } catch {
+          }
+        }
+
+        if (retryAfter) {
+          setCooldownUntil(new Date(retryAfter));
+          return;
+        }
+
         toast({
           title: "Application Failed",
-          description: "There was an error submitting your application. You may be blacklisted or the server is unavailable.",
+          description: message,
           variant: "destructive",
         });
       }
@@ -90,6 +109,43 @@ export default function Apply() {
 
   if (!isAuthenticated) {
     return <LoginPage />;
+  }
+
+  if (cooldownUntil) {
+    return (
+      <div className="max-w-3xl mx-auto w-full z-10 pb-16">
+        <div className="mb-8">
+          <Link href="/" className="inline-flex items-center text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Back to Roles
+          </Link>
+        </div>
+        <Card className="bg-card/40 border-border/40 backdrop-blur-md shadow-2xl">
+          <CardContent className="flex flex-col items-center justify-center gap-6 py-16 text-center">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 flex items-center justify-center">
+              <Clock className="w-8 h-8 text-amber-400" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold">Application Cooldown</h2>
+              <p className="text-muted-foreground max-w-sm">
+                Your previous application was denied. You can submit a new application on:
+              </p>
+              <p className="text-xl font-bold text-amber-400">
+                {cooldownUntil.toLocaleDateString(undefined, {
+                  weekday: "long",
+                  year: "numeric",
+                  month: "long",
+                  day: "numeric",
+                })}
+              </p>
+            </div>
+            <Link href="/">
+              <Button variant="secondary">Back to Home</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   return (

@@ -2,15 +2,18 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { applicationsTable, blacklistTable } from "@workspace/db";
 import { SubmitApplicationBody } from "@workspace/api-zod";
-import { eq, count, sql } from "drizzle-orm";
+import { eq, count, desc, and } from "drizzle-orm";
 import { sendApplicationToDiscord } from "../lib/discord";
+
+const COOLDOWN_DAYS = 30;
 
 const router = Router();
 
-router.post("/applications", async (req, res) => {
+router.post("/applications", async (req, res): Promise<void> => {
   const parsed = SubmitApplicationBody.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ error: "Invalid application data" });
+    res.status(400).json({ error: "Invalid application data" });
+    return;
   }
 
   const data = parsed.data;
@@ -22,7 +25,30 @@ router.post("/applications", async (req, res) => {
     .limit(1);
 
   if (blacklisted.length > 0) {
-    return res.status(403).json({ error: "You are blacklisted from applying." });
+    res.status(403).json({ error: "You are blacklisted from applying." });
+    return;
+  }
+
+  const cutoff = new Date(Date.now() - COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
+  const [recentDenial] = await db
+    .select()
+    .from(applicationsTable)
+    .where(
+      and(
+        eq(applicationsTable.discordId, data.discordId),
+        eq(applicationsTable.status, "denied")
+      )
+    )
+    .orderBy(desc(applicationsTable.createdAt))
+    .limit(1);
+
+  if (recentDenial && recentDenial.createdAt > cutoff) {
+    const retryDate = new Date(recentDenial.createdAt.getTime() + COOLDOWN_DAYS * 24 * 60 * 60 * 1000);
+    res.status(403).json({
+      error: `You were recently denied. You may reapply on ${retryDate.toDateString()}.`,
+      retryAfter: retryDate.toISOString(),
+    });
+    return;
   }
 
   const [application] = await db
@@ -45,7 +71,7 @@ router.post("/applications", async (req, res) => {
     req.log.warn({ err }, "Failed to send application to Discord");
   }
 
-  return res.status(201).json({
+  res.status(201).json({
     ...application,
     createdAt: application.createdAt.toISOString(),
   });
