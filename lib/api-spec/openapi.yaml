@@ -1,22 +1,22 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Staff Application Portal API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: applications
+    description: Staff applications
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +24,51 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /applications:
+    post:
+      operationId: submitApplication
+      tags: [applications]
+      summary: Submit a staff application
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApplicationInput"
+      responses:
+        "201":
+          description: Application submitted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Application"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Blacklisted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /applications/stats:
+    get:
+      operationId: getApplicationStats
+      tags: [applications]
+      summary: Get application statistics
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApplicationStats"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +79,100 @@ components:
       required:
         - status
 
+    ApplicationInput:
+      type: object
+      required:
+        - discordUsername
+        - discordId
+        - role
+        - age
+        - timezone
+        - experience
+        - whyJoin
+        - availability
+      properties:
+        discordUsername:
+          type: string
+          minLength: 2
+        discordId:
+          type: string
+          minLength: 17
+        role:
+          type: string
+          enum: [Moderator, "Human Resources", Partnership]
+        age:
+          type: integer
+          minimum: 13
+        timezone:
+          type: string
+        experience:
+          type: string
+          minLength: 20
+        whyJoin:
+          type: string
+          minLength: 20
+        availability:
+          type: string
+
+    Application:
+      type: object
+      required:
+        - id
+        - discordUsername
+        - discordId
+        - role
+        - age
+        - timezone
+        - experience
+        - whyJoin
+        - availability
+        - status
+        - createdAt
+      properties:
+        id:
+          type: integer
+        discordUsername:
+          type: string
+        discordId:
+          type: string
+        role:
+          type: string
+        age:
+          type: integer
+        timezone:
+          type: string
+        experience:
+          type: string
+        whyJoin:
+          type: string
+        availability:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+
+    ApplicationStats:
+      type: object
+      required:
+        - total
+        - pending
+        - accepted
+        - denied
+      properties:
+        total:
+          type: integer
+        pending:
+          type: integer
+        accepted:
+          type: integer
+        denied:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string

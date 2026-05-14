@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Staff Application Portal"
+version = "1.0.0"
+id = "artifacts/apply-site"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25360
+
+[services.development]
+run = "pnpm --filter @workspace/apply-site run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/apply-site", "run", "build" ]
+publicDir = "artifacts/apply-site/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25360"
+BASE_PATH = "/"
