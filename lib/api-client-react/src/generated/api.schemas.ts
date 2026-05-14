@@ -5,8 +5,27 @@
  * Staff Application Portal API
  * OpenAPI spec version: 0.1.0
  */
+export type HealthStatusBot = {
+  connected: boolean;
+  tag?: string | null;
+  uptime: number;
+  guilds: number;
+};
+
 export interface HealthStatus {
   status: string;
+  bot?: HealthStatusBot;
+}
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  avatar: string | null;
+  discriminator: string;
+}
+
+export interface SuccessResponse {
+  ok: boolean;
 }
 
 export type ApplicationInputRole =

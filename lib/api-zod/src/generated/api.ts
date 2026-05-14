@@ -12,6 +12,31 @@ import * as zod from "zod";
  */
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
+  bot: zod
+    .object({
+      connected: zod.boolean(),
+      tag: zod.string().nullish(),
+      uptime: zod.number(),
+      guilds: zod.number(),
+    })
+    .optional(),
+});
+
+/**
+ * @summary Get current authenticated user
+ */
+export const GetMeResponse = zod.object({
+  id: zod.string(),
+  username: zod.string(),
+  avatar: zod.string().nullable(),
+  discriminator: zod.string(),
+});
+
+/**
+ * @summary Log out current user
+ */
+export const LogoutResponse = zod.object({
+  ok: zod.boolean(),
 });
 
 /**

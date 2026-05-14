@@ -5,9 +5,10 @@
  * Staff Application Portal API
  * OpenAPI spec version: 0.1.0
  */
-import type { HealthStatusBot } from "./healthStatusBot";
 
-export interface HealthStatus {
-  status: string;
-  bot?: HealthStatusBot;
-}
+export type HealthStatusBot = {
+  connected: boolean;
+  tag?: string | null;
+  uptime: number;
+  guilds: number;
+};

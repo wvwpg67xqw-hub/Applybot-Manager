@@ -9,6 +9,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: auth
+    description: Discord OAuth2 authentication
   - name: applications
     description: Staff applications
 paths:
@@ -24,6 +26,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Get current authenticated user
+      responses:
+        "200":
+          description: Authenticated user
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthUser"
+        "401":
+          description: Not authenticated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Log out current user
+      responses:
+        "200":
+          description: Logged out
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessResponse"
 
   /applications:
     post:
@@ -76,8 +110,47 @@ components:
       properties:
         status:
           type: string
+        bot:
+          type: object
+          properties:
+            connected:
+              type: boolean
+            tag:
+              type: string
+              nullable: true
+            uptime:
+              type: number
+            guilds:
+              type: integer
+          required: [connected, uptime, guilds]
       required:
         - status
+
+    AuthUser:
+      type: object
+      required:
+        - id
+        - username
+        - avatar
+        - discriminator
+      properties:
+        id:
+          type: string
+        username:
+          type: string
+        avatar:
+          type: string
+          nullable: true
+        discriminator:
+          type: string
+
+    SuccessResponse:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
 
     ApplicationInput:
       type: object

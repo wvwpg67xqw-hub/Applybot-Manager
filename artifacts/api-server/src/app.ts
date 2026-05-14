@@ -1,8 +1,11 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import session from "express-session";
+import passport from "passport";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { setupPassport } from "./lib/passport";
 
 const app: Express = express();
 
@@ -25,7 +28,38 @@ app.use(
     },
   }),
 );
-app.use(cors());
+
+const domains = process.env["REPLIT_DOMAINS"];
+const isProd = !!domains;
+
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  }),
+);
+
+app.set("trust proxy", 1);
+
+app.use(
+  session({
+    secret: process.env["SESSION_SECRET"] ?? "changeme-dev-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: isProd,
+      httpOnly: true,
+      sameSite: isProd ? "none" : "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    },
+  }),
+);
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+setupPassport();
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

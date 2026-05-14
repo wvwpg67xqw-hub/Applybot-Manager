@@ -11,15 +11,13 @@ export function startKeepalive(port: number) {
     ? `https://${primaryDomain}/api/healthz`
     : `http://localhost:${port}/api/healthz`;
 
-  logger.info({ healthUrl }, "Keepalive started — pinging health endpoint every 4 minutes");
-
   const ping = async () => {
     try {
       const res = await fetch(healthUrl);
       if (res.ok) {
         logger.debug({ status: res.status }, "Keepalive ping OK");
       } else {
-        logger.warn({ status: res.status }, "Keepalive ping returned non-OK status");
+        logger.warn({ status: res.status }, "Keepalive ping non-OK");
       }
     } catch (err) {
       logger.warn({ err }, "Keepalive ping failed");
@@ -30,7 +28,7 @@ export function startKeepalive(port: number) {
 
   logger.info(
     { healthUrl },
-    "Add this URL to UptimeRobot (https://uptimerobot.com) with a 5-minute interval to keep the bot online 24/7"
+    "Keepalive running — add this URL to UptimeRobot (5-min interval) to keep the bot online 24/7"
   );
 
   return healthUrl;

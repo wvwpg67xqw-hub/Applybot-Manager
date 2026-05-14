@@ -10,5 +10,8 @@ export * from "./application";
 export * from "./applicationInput";
 export * from "./applicationInputRole";
 export * from "./applicationStats";
+export * from "./authUser";
 export * from "./errorResponse";
 export * from "./healthStatus";
+export * from "./healthStatusBot";
+export * from "./successResponse";
