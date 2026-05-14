@@ -25,14 +25,23 @@ const TOKEN = process.env.DISCORD_BOT_TOKEN!;
 const MAIN_GUILD_ID = process.env.DISCORD_MAIN_GUILD_ID!;
 const STAFF_CHANNEL_ID = process.env.DISCORD_STAFF_CHANNEL_ID!;
 const STAFF_SERVER_INVITE = process.env.DISCORD_STAFF_SERVER_INVITE!;
+const LOG_CHANNEL_ID = "1503421476487827668";
 
 /* =========================================================
-   ROLE IDS (FIXED SYSTEM)
+   ROLE IDS
 ========================================================= */
+const STAFF_ROLE_ID = "1501682950331301908";
+
 const ROLE_IDS: Record<string, string> = {
   Moderator: "1495222811755806740",
   "Human Resources": "1495222820400009246",
   Partnership: "1495222796517773335",
+};
+
+const TEAM_ROLE_IDS: Record<string, string> = {
+  Moderator: "1501681813398093955",
+  "Human Resources": "1501681511324451028",
+  Partnership: "1501681321343193160",
 };
 
 /* =========================================================
@@ -43,7 +52,21 @@ export const discordClient = new Client({
 });
 
 /* =========================================================
-   REGISTER COMMANDS
+   LOG HELPER
+========================================================= */
+async function sendLog(content: string) {
+  try {
+    const channel = await discordClient.channels.fetch(LOG_CHANNEL_ID);
+    if (channel && channel.isTextBased()) {
+      await channel.send({ content });
+    }
+  } catch (err) {
+    logger.error({ err }, "Log send failed");
+  }
+}
+
+/* =========================================================
+   COMMANDS
 ========================================================= */
 async function registerCommands() {
   const commands = [
@@ -88,7 +111,7 @@ discordClient.once("ready", async () => {
 });
 
 /* =========================================================
-   INTERACTIONS (FIXED CORE)
+   INTERACTIONS
 ========================================================= */
 discordClient.on("interactionCreate", async (interaction) => {
   try {
@@ -118,6 +141,10 @@ discordClient.on("interactionCreate", async (interaction) => {
           reason,
         });
 
+        await sendLog(
+          `🚫 **USER BLACKLISTED**\n👤 ${user.username} (\`${user.id}\`)\n📝 Reason: ${reason}\n👮 By: ${interaction.user.username}`
+        );
+
         return interaction.reply({
           content: `✅ Blacklisted ${user.username}`,
         });
@@ -129,6 +156,10 @@ discordClient.on("interactionCreate", async (interaction) => {
         await db
           .delete(blacklistTable)
           .where(eq(blacklistTable.discordId, user.id));
+
+        await sendLog(
+          `🟢 **USER UNBLACKLISTED**\n👤 ${user.username} (\`${user.id}\`)\n👮 By: ${interaction.user.username}`
+        );
 
         return interaction.reply({
           content: `✅ Removed ${user.username}`,
@@ -148,7 +179,6 @@ discordClient.on("interactionCreate", async (interaction) => {
         });
       }
 
-      /* 🚨 MUST ACK FIRST */
       await interaction.deferUpdate();
 
       const [application] = await db
@@ -173,6 +203,9 @@ discordClient.on("interactionCreate", async (interaction) => {
         });
       }
 
+      const guild = await discordClient.guilds.fetch(MAIN_GUILD_ID);
+      const member = await guild.members.fetch(application.discordId).catch(() => null);
+
       /* =========================================================
          ACCEPT
       ========================================================= */
@@ -183,34 +216,27 @@ discordClient.on("interactionCreate", async (interaction) => {
           .where(eq(applicationsTable.id, appId));
 
         try {
-          const user = await discordClient.users.fetch(application.discordId);
-          await user.send(
-            `🎉 You were accepted for **${application.role}**!\nJoin: ${STAFF_SERVER_INVITE}`
-          );
-        } catch {}
-
-        try {
-          const guild = await discordClient.guilds.fetch(MAIN_GUILD_ID);
-          await guild.roles.fetch();
-
-          const member = await guild.members
-            .fetch(application.discordId)
-            .catch(() => null);
+          await member?.roles.add(STAFF_ROLE_ID);
 
           const roleId = ROLE_IDS[application.role];
+          if (roleId) await member?.roles.add(roleId);
 
-          if (member && roleId) {
-            const role = await guild.roles.fetch(roleId).catch(() => null);
-
-            if (role) {
-              await member.roles.add(role).catch((err) => {
-                logger.error({ err }, "Role assign failed");
-              });
-            }
-          }
+          const teamRoleId = TEAM_ROLE_IDS[application.role];
+          if (teamRoleId) await member?.roles.add(teamRoleId);
         } catch (err) {
-          logger.error({ err }, "Guild/role error");
+          logger.error({ err }, "Role assignment failed");
         }
+
+        await sendLog(
+          `✅ **APPLICATION ACCEPTED**\n👤 ${application.discordUsername} (\`${application.discordId}\`)\n🎭 ${application.role}\n👮 ${interaction.user.username}\n📄 ID: ${appId}`
+        );
+
+        try {
+          const user = await discordClient.users.fetch(application.discordId);
+          await user.send(
+            `🎉 Accepted for **${application.role}**!\nJoin: ${STAFF_SERVER_INVITE}`
+          );
+        } catch {}
 
         const embed = EmbedBuilder.from(
           interaction.message.embeds[0]
@@ -231,6 +257,10 @@ discordClient.on("interactionCreate", async (interaction) => {
           .set({ status: "denied" })
           .where(eq(applicationsTable.id, appId));
 
+        await sendLog(
+          `❌ **APPLICATION DENIED**\n👤 ${application.discordUsername} (\`${application.discordId}\`)\n🎭 ${application.role}\n👮 ${interaction.user.username}\n📄 ID: ${appId}`
+        );
+
         try {
           const user = await discordClient.users.fetch(application.discordId);
           await user.send(
@@ -247,14 +277,6 @@ discordClient.on("interactionCreate", async (interaction) => {
           components: [],
         });
       }
-
-      /* =========================================================
-         UNKNOWN ACTION
-      ========================================================= */
-      return interaction.message.edit({
-        content: `❌ Unknown action: ${action}`,
-        components: [],
-      });
     }
   } catch (err: any) {
     logger.error({ err }, "Interaction error");
@@ -284,12 +306,7 @@ export async function sendApplicationToDiscord(application: Application) {
     .addFields(
       { name: "User", value: application.discordUsername, inline: true },
       { name: "ID", value: application.discordId, inline: true },
-      { name: "Role", value: application.role, inline: true },
-      { name: "Age", value: String(application.age), inline: true },
-      { name: "Timezone", value: application.timezone, inline: true },
-      { name: "Experience", value: application.experience },
-      { name: "Why Join", value: application.whyJoin },
-      { name: "Availability", value: application.availability }
+      { name: "Role", value: application.role, inline: true }
     )
     .setFooter({ text: `Application #${application.id}` })
     .setTimestamp(application.createdAt);
@@ -309,13 +326,9 @@ export async function sendApplicationToDiscord(application: Application) {
 }
 
 /* =========================================================
-   INIT BOT
+   INIT
 ========================================================= */
 export async function initDiscordBot() {
-  if (!TOKEN) {
-    logger.warn("Missing bot token");
-    return;
-  }
-
+  if (!TOKEN) return;
   await discordClient.login(TOKEN);
 }
