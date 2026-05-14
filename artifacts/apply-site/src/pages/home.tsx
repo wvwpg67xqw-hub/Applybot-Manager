@@ -4,8 +4,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ShieldAlert, Users, Handshake, ChevronRight, Activity, Clock, CheckCircle, XCircle } from "lucide-react";
-import { ApplicationInputRole } from "@workspace/api-zod/src/generated/types";
-
 export default function Home() {
   const { data: stats, isLoading } = useGetApplicationStats({
     query: { queryKey: getGetApplicationStatsQueryKey() }
