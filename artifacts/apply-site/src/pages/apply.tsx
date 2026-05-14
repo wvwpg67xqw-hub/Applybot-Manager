@@ -35,7 +35,7 @@ export default function Apply() {
   const [, params] = useRoute("/apply/:role");
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
-  const { user, isLoading: authLoading, isAuthenticated, login } = useAuth();
+  const { user, isLoading: authLoading, isAuthenticated } = useAuth();
   const [cooldownUntil, setCooldownUntil] = useState<Date | null>(null);
 
   const roleParam = params?.role ? decodeURIComponent(params.role) : "";
@@ -98,14 +98,6 @@ export default function Apply() {
       }
     });
   };
-
-  if (authLoading) {
-    return (
-      <div className="max-w-3xl mx-auto w-full z-10 flex items-center justify-center py-24">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
 
   if (!isAuthenticated) {
     return <LoginPage />;

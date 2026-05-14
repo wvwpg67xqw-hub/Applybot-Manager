@@ -2,7 +2,7 @@ import { useGetMe, getGetMeQueryKey, useLogout } from "@workspace/api-client-rea
 import { useQueryClient } from "@tanstack/react-query";
 
 export function useAuth() {
-  const { data: user, isLoading } = useGetMe({
+  const { data: user, isLoading, isError } = useGetMe({
     query: {
       queryKey: getGetMeQueryKey(),
       retry: false,
@@ -27,7 +27,7 @@ export function useAuth() {
 
   return {
     user: user ?? null,
-    isLoading,
+    isLoading: isLoading && !isError,
     isAuthenticated: !!user,
     login,
     logout,
