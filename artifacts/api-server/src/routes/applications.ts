@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { applicationsTable, blacklistTable } from "@workspace/db";
-import { applicationInputSchema } from "@workspace/api-zod";
+import { SubmitApplicationBody as applicationInputSchema } from "@workspace/api-zod";
 import { eq, count, desc, and } from "drizzle-orm";
 import { sendApplicationToDiscord } from "../lib/discord";
 
