@@ -18,3 +18,18 @@ expertMode = true
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 20000
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 80
+
+[userenv]
+
+[userenv.shared]
+DISCORD_MAIN_GUILD_ID = "1488275472319119420"
+DISCORD_STAFF_CHANNEL_ID = "1503147704522637494"
+DISCORD_STAFF_SERVER_INVITE = "https://discord.gg/CBR2ha6YXT"
