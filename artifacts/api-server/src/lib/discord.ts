@@ -25,10 +25,13 @@ const TOKEN = process.env.DISCORD_BOT_TOKEN!;
 const MAIN_GUILD_ID = process.env.DISCORD_MAIN_GUILD_ID!;
 const STAFF_CHANNEL_ID = process.env.DISCORD_STAFF_CHANNEL_ID!;
 const STAFF_SERVER_INVITE = process.env.DISCORD_STAFF_SERVER_INVITE!;
-const LOG_CHANNEL_ID = "1503421476487827668";
+
+/* LOG CHANNELS */
+const APP_LOG_CHANNEL_ID = "1503421476487827668";
+const ERROR_LOG_CHANNEL_ID = "1504477352514682922";
 
 /* =========================================================
-   ROLE IDS
+   ROLES
 ========================================================= */
 const STAFF_ROLE_ID = "1501682950331301908";
 
@@ -52,17 +55,90 @@ export const discordClient = new Client({
 });
 
 /* =========================================================
-   LOG HELPER
+   LOG HELPERS
 ========================================================= */
 async function sendLog(content: string) {
   try {
-    const channel = await discordClient.channels.fetch(LOG_CHANNEL_ID);
+    const channel = await discordClient.channels.fetch(APP_LOG_CHANNEL_ID);
     if (channel && channel.isTextBased()) {
       await channel.send({ content });
     }
   } catch (err) {
-    logger.error({ err }, "Log failed");
+    console.error("App log failed:", err);
   }
+}
+
+async function sendErrorLog(title: string, payload: any) {
+  try {
+    const channel = await discordClient.channels.fetch(ERROR_LOG_CHANNEL_ID);
+    if (!channel || !channel.isTextBased()) return;
+
+    const safe =
+      typeof payload === "string"
+        ? payload
+        : JSON.stringify(
+            payload,
+            Object.getOwnPropertyNames(payload),
+            2
+          );
+
+    await channel.send({
+      content:
+        `🚨 **${title}**\n\`\`\`js\n${safe.slice(0, 1900)}\n\`\`\``,
+    });
+  } catch (err) {
+    console.error("Error log failed:", err);
+  }
+}
+
+/* =========================================================
+   GLOBAL CRASH HANDLERS
+========================================================= */
+process.on("uncaughtException", async (err) => {
+  console.error("Uncaught Exception:", err);
+  await sendErrorLog("UNCAUGHT EXCEPTION", err);
+});
+
+process.on("unhandledRejection", async (reason) => {
+  console.error("Unhandled Rejection:", reason);
+  await sendErrorLog("UNHANDLED REJECTION", reason);
+});
+
+/* =========================================================
+   COMMANDS
+========================================================= */
+async function registerCommands() {
+  const commands = [
+    new SlashCommandBuilder()
+      .setName("blacklist")
+      .setDescription("Blacklist a user")
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .addUserOption((o) =>
+        o.setName("user").setRequired(true)
+      )
+      .addStringOption((o) =>
+        o.setName("reason").setRequired(false)
+      )
+      .toJSON(),
+
+    new SlashCommandBuilder()
+      .setName("unblacklist")
+      .setDescription("Remove blacklist")
+      .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+      .addUserOption((o) =>
+        o.setName("user").setRequired(true)
+      )
+      .toJSON(),
+  ];
+
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
+
+  await rest.put(
+    Routes.applicationGuildCommands(discordClient.user!.id, MAIN_GUILD_ID),
+    { body: commands }
+  );
+
+  logger.info("Commands registered");
 }
 
 /* =========================================================
@@ -70,6 +146,7 @@ async function sendLog(content: string) {
 ========================================================= */
 discordClient.once("ready", async () => {
   logger.info({ tag: discordClient.user?.tag }, "Bot ready");
+  await registerCommands();
 });
 
 /* =========================================================
@@ -77,36 +154,67 @@ discordClient.once("ready", async () => {
 ========================================================= */
 discordClient.on("interactionCreate", async (interaction) => {
   try {
+    /* ================= SLASH COMMANDS ================= */
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === "blacklist") {
+        const user = interaction.options.getUser("user", true);
+        const reason =
+          interaction.options.getString("reason") ?? "No reason";
+
+        const exists = await db
+          .select()
+          .from(blacklistTable)
+          .where(eq(blacklistTable.discordId, user.id))
+          .limit(1);
+
+        if (exists.length) {
+          return interaction.reply({
+            content: "❌ Already blacklisted",
+            flags: 64,
+          });
+        }
+
+        await db.insert(blacklistTable).values({
+          discordId: user.id,
+          discordUsername: user.username,
+          reason,
+        });
+
+        await sendLog(
+          `🚫 BLACKLISTED\n${user.username} (${user.id})\nBy: ${interaction.user.username}`
+        );
+
+        return interaction.reply({ content: "✅ Blacklisted" });
+      }
+
+      if (interaction.commandName === "unblacklist") {
+        const user = interaction.options.getUser("user", true);
+
+        await db
+          .delete(blacklistTable)
+          .where(eq(blacklistTable.discordId, user.id));
+
+        await sendLog(
+          `🟢 UNBLACKLISTED\n${user.username} (${user.id})\nBy: ${interaction.user.username}`
+        );
+
+        return interaction.reply({ content: "✅ Removed blacklist" });
+      }
+    }
+
     /* ================= BUTTONS ================= */
     if (interaction.isButton()) {
-      const parts = interaction.customId.split("_");
+      const [action, rawId] = interaction.customId.split("_");
+      const appId = Number(rawId);
 
-      const action = parts[0];
-      const rawId = parts.slice(1).join("_"); // 🔥 FIX: prevents broken split issues
-
-      if (!rawId) {
+      if (Number.isNaN(appId)) {
         return interaction.reply({
-          content: "❌ Missing application ID",
+          content: "❌ Invalid application ID",
           flags: 64,
         });
       }
 
       await interaction.deferUpdate();
-
-      // 🔥 FIX: ALWAYS treat ID as NUMBER safely
-      const appId = Number(rawId);
-
-      if (Number.isNaN(appId)) {
-        logger.warn({ rawId }, "Invalid appId parsed from button");
-        return interaction.message.edit({
-          content: "❌ Invalid application ID (parse error)",
-          embeds: [],
-          components: [],
-        });
-      }
-
-      // 🔥 DEBUG: confirm what we are searching
-      logger.info({ appId }, "Looking up application");
 
       const [application] = await db
         .select()
@@ -114,21 +222,18 @@ discordClient.on("interactionCreate", async (interaction) => {
         .where(eq(applicationsTable.id, appId))
         .limit(1);
 
-      // 🔥 FIXED ERROR INFO (NOT BLIND FAIL)
       if (!application) {
-        logger.warn({ appId }, "Application not found in DB");
+        await sendErrorLog("APPLICATION NOT FOUND", { appId });
 
         return interaction.message.edit({
-          content: `❌ Application not found in database (ID: ${appId})`,
-          embeds: [],
+          content: `❌ Application not found (${appId})`,
           components: [],
+          embeds: [],
         });
       }
 
       const guild = await discordClient.guilds.fetch(MAIN_GUILD_ID);
-      const member = await guild.members
-        .fetch(application.discordId)
-        .catch(() => null);
+      const member = await guild.members.fetch(application.discordId).catch(() => null);
 
       /* ================= ACCEPT ================= */
       if (action === "accept") {
@@ -146,11 +251,11 @@ discordClient.on("interactionCreate", async (interaction) => {
           const teamRoleId = TEAM_ROLE_IDS[application.role];
           if (teamRoleId) await member?.roles.add(teamRoleId);
         } catch (err) {
-          logger.error({ err }, "Role assign failed");
+          await sendErrorLog("ROLE ASSIGN FAILED", err);
         }
 
         await sendLog(
-          `✅ ACCEPTED\nUser: ${application.discordUsername}\nRole: ${application.role}\nID: ${appId}`
+          `✅ ACCEPTED\n${application.discordUsername}\n${application.role}\nID: ${appId}`
         );
 
         try {
@@ -176,7 +281,7 @@ discordClient.on("interactionCreate", async (interaction) => {
           .where(eq(applicationsTable.id, appId));
 
         await sendLog(
-          `❌ DENIED\nUser: ${application.discordUsername}\nRole: ${application.role}\nID: ${appId}`
+          `❌ DENIED\n${application.discordUsername}\n${application.role}\nID: ${appId}`
         );
 
         try {
@@ -195,7 +300,7 @@ discordClient.on("interactionCreate", async (interaction) => {
       }
     }
   } catch (err: any) {
-    logger.error({ err }, "Interaction crash");
+    await sendErrorLog("INTERACTION ERROR", err);
 
     try {
       if (interaction.isRepliable()) {
@@ -209,7 +314,7 @@ discordClient.on("interactionCreate", async (interaction) => {
 });
 
 /* =========================================================
-   APPLICATION SENDER (IMPORTANT FIX HERE)
+   APPLICATION SENDER
 ========================================================= */
 export async function sendApplicationToDiscord(application: Application) {
   const channel = (await discordClient.channels.fetch(
@@ -221,14 +326,13 @@ export async function sendApplicationToDiscord(application: Application) {
     .setColor(0x5865f2)
     .addFields(
       { name: "User", value: application.discordUsername },
-      { name: "ID", value: application.discordId },
       { name: "Role", value: application.role }
     )
-    .setFooter({ text: `App ID: ${application.id}` });
+    .setFooter({ text: `ID: ${application.id}` });
 
   const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()
-      .setCustomId(`accept_${String(application.id)}`) // 🔥 FIX: force string safety
+      .setCustomId(`accept_${String(application.id)}`)
       .setLabel("Accept")
       .setStyle(ButtonStyle.Success),
 
