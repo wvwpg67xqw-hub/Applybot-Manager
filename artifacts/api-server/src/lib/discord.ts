@@ -27,7 +27,7 @@ const STAFF_CHANNEL_ID = process.env.DISCORD_STAFF_CHANNEL_ID!;
 const STAFF_SERVER_INVITE = process.env.DISCORD_STAFF_SERVER_INVITE!;
 
 /* LOG CHANNELS */
-const APP_LOG_CHANNEL_ID = "1503421476487827668";
+const APP_LOG_CHANNEL_ID = "1504481311539204246";
 const ERROR_LOG_CHANNEL_ID = "1504477352514682922";
 
 /* =========================================================
