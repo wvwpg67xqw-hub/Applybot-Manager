@@ -18,63 +18,60 @@ import { eq } from "drizzle-orm";
 import type { Application } from "@workspace/db";
 import { logger } from "./logger";
 
+/* =========================================================
+   ENV
+========================================================= */
 const TOKEN = process.env.DISCORD_BOT_TOKEN!;
 const MAIN_GUILD_ID = process.env.DISCORD_MAIN_GUILD_ID!;
 const STAFF_CHANNEL_ID = process.env.DISCORD_STAFF_CHANNEL_ID!;
 const STAFF_SERVER_INVITE = process.env.DISCORD_STAFF_SERVER_INVITE!;
 
-const ROLE_COLORS: Record<string, number> = {
-  Moderator: 0x5865f2,
-  "Human Resources": 0x57f287,
-  Partnership: 0xfee75c,
-};
-
+/* =========================================================
+   CLIENT
+========================================================= */
 export const discordClient = new Client({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers],
 });
 
 /* =========================================================
-   COMMAND REGISTRATION
+   COMMANDS
 ========================================================= */
 async function registerCommands() {
   const commands = [
     new SlashCommandBuilder()
       .setName("blacklist")
-      .setDescription("Blacklist a user from applying")
+      .setDescription("Blacklist a user")
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-      .addUserOption((opt) =>
-        opt.setName("user").setDescription("The user to blacklist").setRequired(true)
+      .addUserOption((o) =>
+        o.setName("user").setDescription("User").setRequired(true)
       )
-      .addStringOption((opt) =>
-        opt.setName("reason").setDescription("Reason").setRequired(false)
+      .addStringOption((o) =>
+        o.setName("reason").setDescription("Reason")
       )
       .toJSON(),
 
     new SlashCommandBuilder()
       .setName("unblacklist")
-      .setDescription("Remove a user from blacklist")
+      .setDescription("Remove blacklist")
       .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-      .addUserOption((opt) =>
-        opt.setName("user").setDescription("The user").setRequired(true)
+      .addUserOption((o) =>
+        o.setName("user").setDescription("User").setRequired(true)
       )
       .toJSON(),
   ];
 
   const rest = new REST({ version: "10" }).setToken(TOKEN);
 
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(discordClient.user!.id, MAIN_GUILD_ID),
-      { body: commands }
-    );
-    logger.info("Slash commands registered");
-  } catch (err) {
-    logger.error({ err }, "Failed to register commands");
-  }
+  await rest.put(
+    Routes.applicationGuildCommands(discordClient.user!.id, MAIN_GUILD_ID),
+    { body: commands }
+  );
+
+  logger.info("Commands registered");
 }
 
 /* =========================================================
-   READY EVENT
+   READY
 ========================================================= */
 discordClient.once("ready", async () => {
   logger.info({ tag: discordClient.user?.tag }, "Bot ready");
@@ -82,65 +79,69 @@ discordClient.once("ready", async () => {
 });
 
 /* =========================================================
-   INTERACTIONS
+   INTERACTIONS (FIXED CORE)
 ========================================================= */
 discordClient.on("interactionCreate", async (interaction) => {
-  /* ================= CHAT COMMANDS ================= */
-  if (interaction.isChatInputCommand()) {
-    if (interaction.commandName === "blacklist") {
-      const user = interaction.options.getUser("user", true);
-      const reason = interaction.options.getString("reason") ?? "No reason";
+  try {
+    /* ================= SLASH COMMANDS ================= */
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === "blacklist") {
+        const user = interaction.options.getUser("user", true);
+        const reason =
+          interaction.options.getString("reason") ?? "No reason";
 
-      const existing = await db
-        .select()
-        .from(blacklistTable)
-        .where(eq(blacklistTable.discordId, user.id))
-        .limit(1);
+        const existing = await db
+          .select()
+          .from(blacklistTable)
+          .where(eq(blacklistTable.discordId, user.id))
+          .limit(1);
 
-      if (existing.length > 0) {
-        await interaction.reply({ content: "Already blacklisted.", flags: 64 });
-        return;
+        if (existing.length) {
+          return interaction.reply({
+            content: "❌ Already blacklisted",
+            flags: 64,
+          });
+        }
+
+        await db.insert(blacklistTable).values({
+          discordId: user.id,
+          discordUsername: user.username,
+          reason,
+        });
+
+        return interaction.reply({
+          content: `✅ Blacklisted ${user.username}`,
+        });
       }
 
-      await db.insert(blacklistTable).values({
-        discordId: user.id,
-        discordUsername: user.username,
-        reason,
-      });
+      if (interaction.commandName === "unblacklist") {
+        const user = interaction.options.getUser("user", true);
 
-      await interaction.reply({
-        content: `✅ Blacklisted **${user.username}**`,
-      });
+        await db
+          .delete(blacklistTable)
+          .where(eq(blacklistTable.discordId, user.id));
 
-      return;
+        return interaction.reply({
+          content: `✅ Removed ${user.username}`,
+        });
+      }
     }
 
-    if (interaction.commandName === "unblacklist") {
-      const user = interaction.options.getUser("user", true);
+    /* ================= BUTTONS ================= */
+    if (interaction.isButton()) {
+      const [action, idStr] = interaction.customId.split("_");
+      const appId = Number(idStr);
 
-      await db
-        .delete(blacklistTable)
-        .where(eq(blacklistTable.discordId, user.id));
+      if (isNaN(appId)) {
+        return interaction.reply({
+          content: "❌ Invalid application ID",
+          flags: 64,
+        });
+      }
 
-      await interaction.reply({
-        content: `✅ Removed **${user.username}** from blacklist`,
-      });
+      /* 🚨 MUST ACK IMMEDIATELY */
+      await interaction.deferUpdate();
 
-      return;
-    }
-  }
-
-  /* ================= BUTTONS ================= */
-  if (interaction.isButton()) {
-    const [action, appIdStr] = interaction.customId.split("_");
-    const appId = Number(appIdStr);
-
-    if (isNaN(appId)) return;
-
-    /* 🚨 IMPORTANT: instantly acknowledge interaction */
-    await interaction.deferUpdate();
-
-    try {
       const [application] = await db
         .select()
         .from(applicationsTable)
@@ -148,17 +149,19 @@ discordClient.on("interactionCreate", async (interaction) => {
         .limit(1);
 
       if (!application) {
-        await interaction.editReply({
-          content: "❌ Application not found.",
+        return interaction.message.edit({
+          content: "❌ Application not found",
+          components: [],
+          embeds: [],
         });
-        return;
       }
 
       if (application.status !== "pending") {
-        await interaction.editReply({
-          content: `This application is already **${application.status}**.`,
+        return interaction.message.edit({
+          content: `⚠️ Already ${application.status}`,
+          components: [],
+          embeds: [],
         });
-        return;
       }
 
       /* ================= ACCEPT ================= */
@@ -179,30 +182,33 @@ discordClient.on("interactionCreate", async (interaction) => {
           const guild = await discordClient.guilds.fetch(MAIN_GUILD_ID);
           await guild.roles.fetch();
 
-          const member = await guild.members.fetch(application.discordId).catch(() => null);
+          const member = await guild.members
+            .fetch(application.discordId)
+            .catch(() => null);
 
-          if (member) {
-            const role = guild.roles.cache.find(
-              (r) => r.name.toLowerCase() === application.role.toLowerCase()
-            );
-            if (role) await member.roles.add(role);
+          const role = guild.roles.cache.find(
+            (r) => r.name.toLowerCase() === application.role.toLowerCase()
+          );
+
+          if (member && role) {
+            await member.roles.add(role);
           }
         } catch (err) {
-          logger.warn({ err }, "Role assignment failed");
+          logger.warn({ err }, "Role error");
         }
 
-        const embed = EmbedBuilder.from(interaction.message.embeds[0])
-          .setColor(0x57f287)
-          .setFooter({ text: `Accepted by ${interaction.user.username}` });
+        const embed = EmbedBuilder.from(
+          interaction.message.embeds[0]
+        ).setColor(0x57f287);
 
-        await interaction.editReply({
+        return interaction.message.edit({
           embeds: [embed],
           components: [],
         });
       }
 
       /* ================= DENY ================= */
-      else if (action === "deny") {
+      if (action === "deny") {
         await db
           .update(applicationsTable)
           .set({ status: "denied" })
@@ -215,29 +221,40 @@ discordClient.on("interactionCreate", async (interaction) => {
           );
         } catch {}
 
-        const embed = EmbedBuilder.from(interaction.message.embeds[0])
-          .setColor(0xed4245)
-          .setFooter({ text: `Denied by ${interaction.user.username}` });
+        const embed = EmbedBuilder.from(
+          interaction.message.embeds[0]
+        ).setColor(0xed4245);
 
-        await interaction.editReply({
+        return interaction.message.edit({
           embeds: [embed],
           components: [],
         });
       }
-    } catch (err) {
-      logger.error({ err }, "Button interaction failed");
 
-      try {
-        await interaction.editReply({
-          content: "❌ Something went wrong processing this action.",
+      /* ================= UNKNOWN ================= */
+      return interaction.message.edit({
+        content: `❌ Unknown action: ${action}`,
+        components: [],
+      });
+    }
+  } catch (err: any) {
+    logger.error({ err }, "Interaction error");
+
+    try {
+      if (interaction.isRepliable()) {
+        return interaction.reply({
+          content: `❌ Error: ${err?.message || "Unknown error"}`,
+          flags: 64,
         });
-      } catch {}
+      }
+    } catch {
+      // fallback ignored
     }
   }
 });
 
 /* =========================================================
-   SEND APPLICATION TO DISCORD
+   SEND APPLICATION
 ========================================================= */
 export async function sendApplicationToDiscord(application: Application) {
   const channel = (await discordClient.channels.fetch(
@@ -246,9 +263,9 @@ export async function sendApplicationToDiscord(application: Application) {
 
   const embed = new EmbedBuilder()
     .setTitle(`New ${application.role} Application`)
-    .setColor(ROLE_COLORS[application.role] ?? 0x5865f2)
+    .setColor(0x5865f2)
     .addFields(
-      { name: "Username", value: application.discordUsername, inline: true },
+      { name: "User", value: application.discordUsername, inline: true },
       { name: "ID", value: application.discordId, inline: true },
       { name: "Role", value: application.role, inline: true },
       { name: "Age", value: String(application.age), inline: true },
@@ -275,11 +292,11 @@ export async function sendApplicationToDiscord(application: Application) {
 }
 
 /* =========================================================
-   INIT BOT
+   INIT
 ========================================================= */
 export async function initDiscordBot() {
   if (!TOKEN) {
-    logger.warn("No bot token provided");
+    logger.warn("Missing bot token");
     return;
   }
 
