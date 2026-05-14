@@ -58,7 +58,7 @@ export const discordClient = new Client({
 /* =========================================================
    LOG HELPERS
 ========================================================= */
-async function sendLog(content: string) {
+export async function sendLog(content: string) {
   try {
     const channel = await discordClient.channels.fetch(APP_LOG_CHANNEL_ID);
     if (channel && channel.isTextBased()) {
@@ -69,7 +69,7 @@ async function sendLog(content: string) {
   }
 }
 
-async function sendErrorLog(title: string, payload: any) {
+export async function sendErrorLog(title: string, payload: any) {
   try {
     const channel = await discordClient.channels.fetch(ERROR_LOG_CHANNEL_ID);
     if (!channel || !channel.isTextBased()) return;
