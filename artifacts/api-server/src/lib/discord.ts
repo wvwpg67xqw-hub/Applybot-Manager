@@ -19,12 +19,21 @@ import type { Application } from "@workspace/db";
 import { logger } from "./logger";
 
 /* =========================================================
-   ENV
+   CONFIG
 ========================================================= */
 const TOKEN = process.env.DISCORD_BOT_TOKEN!;
 const MAIN_GUILD_ID = process.env.DISCORD_MAIN_GUILD_ID!;
 const STAFF_CHANNEL_ID = process.env.DISCORD_STAFF_CHANNEL_ID!;
 const STAFF_SERVER_INVITE = process.env.DISCORD_STAFF_SERVER_INVITE!;
+
+/* =========================================================
+   ROLE IDS (FIXED SYSTEM)
+========================================================= */
+const ROLE_IDS: Record<string, string> = {
+  Moderator: "1495222811755806740",
+  "Human Resources": "1495222820400009246",
+  Partnership: "1495222796517773335",
+};
 
 /* =========================================================
    CLIENT
@@ -34,7 +43,7 @@ export const discordClient = new Client({
 });
 
 /* =========================================================
-   COMMANDS
+   REGISTER COMMANDS
 ========================================================= */
 async function registerCommands() {
   const commands = [
@@ -90,13 +99,13 @@ discordClient.on("interactionCreate", async (interaction) => {
         const reason =
           interaction.options.getString("reason") ?? "No reason";
 
-        const existing = await db
+        const exists = await db
           .select()
           .from(blacklistTable)
           .where(eq(blacklistTable.discordId, user.id))
           .limit(1);
 
-        if (existing.length) {
+        if (exists.length) {
           return interaction.reply({
             content: "❌ Already blacklisted",
             flags: 64,
@@ -139,7 +148,7 @@ discordClient.on("interactionCreate", async (interaction) => {
         });
       }
 
-      /* 🚨 MUST ACK IMMEDIATELY */
+      /* 🚨 MUST ACK FIRST */
       await interaction.deferUpdate();
 
       const [application] = await db
@@ -151,20 +160,22 @@ discordClient.on("interactionCreate", async (interaction) => {
       if (!application) {
         return interaction.message.edit({
           content: "❌ Application not found",
-          components: [],
           embeds: [],
+          components: [],
         });
       }
 
       if (application.status !== "pending") {
         return interaction.message.edit({
           content: `⚠️ Already ${application.status}`,
-          components: [],
           embeds: [],
+          components: [],
         });
       }
 
-      /* ================= ACCEPT ================= */
+      /* =========================================================
+         ACCEPT
+      ========================================================= */
       if (action === "accept") {
         await db
           .update(applicationsTable)
@@ -174,7 +185,7 @@ discordClient.on("interactionCreate", async (interaction) => {
         try {
           const user = await discordClient.users.fetch(application.discordId);
           await user.send(
-            `🎉 Accepted for **${application.role}**!\nJoin: ${STAFF_SERVER_INVITE}`
+            `🎉 You were accepted for **${application.role}**!\nJoin: ${STAFF_SERVER_INVITE}`
           );
         } catch {}
 
@@ -186,15 +197,19 @@ discordClient.on("interactionCreate", async (interaction) => {
             .fetch(application.discordId)
             .catch(() => null);
 
-          const role = guild.roles.cache.find(
-            (r) => r.name.toLowerCase() === application.role.toLowerCase()
-          );
+          const roleId = ROLE_IDS[application.role];
 
-          if (member && role) {
-            await member.roles.add(role);
+          if (member && roleId) {
+            const role = await guild.roles.fetch(roleId).catch(() => null);
+
+            if (role) {
+              await member.roles.add(role).catch((err) => {
+                logger.error({ err }, "Role assign failed");
+              });
+            }
           }
         } catch (err) {
-          logger.warn({ err }, "Role error");
+          logger.error({ err }, "Guild/role error");
         }
 
         const embed = EmbedBuilder.from(
@@ -207,7 +222,9 @@ discordClient.on("interactionCreate", async (interaction) => {
         });
       }
 
-      /* ================= DENY ================= */
+      /* =========================================================
+         DENY
+      ========================================================= */
       if (action === "deny") {
         await db
           .update(applicationsTable)
@@ -231,7 +248,9 @@ discordClient.on("interactionCreate", async (interaction) => {
         });
       }
 
-      /* ================= UNKNOWN ================= */
+      /* =========================================================
+         UNKNOWN ACTION
+      ========================================================= */
       return interaction.message.edit({
         content: `❌ Unknown action: ${action}`,
         components: [],
@@ -247,9 +266,7 @@ discordClient.on("interactionCreate", async (interaction) => {
           flags: 64,
         });
       }
-    } catch {
-      // fallback ignored
-    }
+    } catch {}
   }
 });
 
@@ -292,7 +309,7 @@ export async function sendApplicationToDiscord(application: Application) {
 }
 
 /* =========================================================
-   INIT
+   INIT BOT
 ========================================================= */
 export async function initDiscordBot() {
   if (!TOKEN) {
