@@ -18,12 +18,26 @@ declare global {
   }
 }
 
-export function getCallbackUrl(): string {
+/**
+ * Returns the public base URL of the app (no trailing slash).
+ * Priority: APP_BASE_URL env var → REPLIT_DOMAINS → localhost
+ *
+ * Set APP_BASE_URL=https://dash.lemonhost.me/dashboard in secrets
+ * to point auth at the custom domain.
+ */
+export function getAppBaseUrl(): string {
+  const custom = process.env["APP_BASE_URL"];
+  if (custom) return custom.replace(/\/$/, "");
+
   const domains = process.env["REPLIT_DOMAINS"];
   const primary = domains ? domains.split(",")[0]!.trim() : null;
   return primary
-    ? `https://${primary}/api/auth/callback`
-    : `http://localhost:${process.env["PORT"] ?? 8080}/api/auth/callback`;
+    ? `https://${primary}`
+    : `http://localhost:${process.env["PORT"] ?? 8080}`;
+}
+
+export function getCallbackUrl(): string {
+  return `${getAppBaseUrl()}/api/auth/callback`;
 }
 
 export function setupPassport() {
@@ -55,5 +69,5 @@ export function setupPassport() {
   passport.serializeUser((user, done) => done(null, user));
   passport.deserializeUser((user, done) => done(null, user as DiscordUser));
 
-  logger.info("Discord OAuth2 strategy registered");
+  logger.info({ callbackUrl: getCallbackUrl() }, "Discord OAuth2 strategy registered");
 }

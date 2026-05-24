@@ -1,6 +1,6 @@
 import { Router } from "express";
 import passport from "passport";
-import { getCallbackUrl } from "../lib/passport";
+import { getCallbackUrl, getAppBaseUrl } from "../lib/passport";
 import { logger } from "../lib/logger";
 
 const router = Router();
@@ -16,9 +16,7 @@ router.get(
   (req, res): void => {
     const raw = Array.isArray(req.query["state"]) ? req.query["state"][0] : req.query["state"];
     const redirect = typeof raw === "string" && raw.startsWith("/") ? raw : "/";
-    const domains = process.env["REPLIT_DOMAINS"];
-    const primary = domains ? domains.split(",")[0]!.trim() : null;
-    const base = primary ? `https://${primary}` : "";
+    const base = getAppBaseUrl();
     res.redirect(`${base}${redirect}`);
   }
 );
@@ -46,9 +44,7 @@ router.post("/auth/logout", (req, res): void => {
 
 router.get("/auth/url", (req, res): void => {
   const redirect = typeof req.query["redirect"] === "string" ? req.query["redirect"] : "/";
-  const domains = process.env["REPLIT_DOMAINS"];
-  const primary = domains ? domains.split(",")[0]!.trim() : null;
-  const base = primary ? `https://${primary}` : `http://localhost:${process.env["PORT"] ?? 8080}`;
+  const base = getAppBaseUrl();
   const url = `${base}/api/auth/discord?redirect=${encodeURIComponent(redirect)}`;
   res.json({ url, callbackUrl: getCallbackUrl() });
 });

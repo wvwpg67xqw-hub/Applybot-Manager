@@ -18,23 +18,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "API Server"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "Start application"
-
-[[workflows.workflow]]
-name = "API Server"
-author = "agent"
-
-[workflows.workflow.metadata]
-outputType = "console"
-
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=8080 pnpm --filter @workspace/api-server run dev"
-waitForPort = 8080
 
 [[workflows.workflow]]
 name = "Start application"
@@ -77,3 +61,4 @@ externalPort = 3000
 DISCORD_MAIN_GUILD_ID = "1488275472319119420"
 DISCORD_STAFF_CHANNEL_ID = "1503147704522637494"
 DISCORD_STAFF_SERVER_INVITE = "https://discord.gg/CBR2ha6YXT"
+APP_BASE_URL = "https://dash.lemonhost.me/dashboard"
