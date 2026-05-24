@@ -6,6 +6,7 @@ import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import Apply from "@/pages/apply";
 import Success from "@/pages/success";
+import AdminPanel from "@/pages/admin-panel";
 import { Layout } from "@/components/layout";
 
 const queryClient = new QueryClient({
@@ -28,6 +29,7 @@ function Router() {
         <Route path="/" component={Home} />
         <Route path="/apply/:role" component={Apply} />
         <Route path="/success" component={Success} />
+        <Route path="/admin" component={AdminPanel} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
