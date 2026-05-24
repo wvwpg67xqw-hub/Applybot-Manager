@@ -3,9 +3,13 @@ import cors from "cors";
 import session from "express-session";
 import passport from "passport";
 import pinoHttp from "pino-http";
+import { join } from "path";
+import { fileURLToPath } from "url";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { setupPassport } from "./lib/passport";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 const app: Express = express();
 
@@ -14,31 +18,18 @@ app.use(
     logger,
     serializers: {
       req(req) {
-        return {
-          id: req.id,
-          method: req.method,
-          url: req.url?.split("?")[0],
-        };
+        return { id: req.id, method: req.method, url: req.url?.split("?")[0] };
       },
       res(res) {
-        return {
-          statusCode: res.statusCode,
-        };
+        return { statusCode: res.statusCode };
       },
     },
   }),
 );
 
-const domains = process.env["REPLIT_DOMAINS"];
-const isProd = !!domains;
+const isProd = process.env["NODE_ENV"] === "production";
 
-app.use(
-  cors({
-    origin: true,
-    credentials: true,
-  }),
-);
-
+app.use(cors({ origin: true, credentials: true }));
 app.set("trust proxy", 1);
 
 app.use(
@@ -70,5 +61,16 @@ app.use(
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+/* =========================================================
+   Serve the built frontend under /dashboard (production only)
+========================================================= */
+if (isProd) {
+  const frontendDist = join(__dirname, "../../apply-site/dist/public");
+  app.use("/dashboard", express.static(frontendDist));
+  app.get("/dashboard/*", (_req, res) => {
+    res.sendFile(join(frontendDist, "index.html"));
+  });
+}
 
 export default app;
