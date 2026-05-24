@@ -55,9 +55,20 @@ router.post("/admin/applications/:id/accept", requireAdmin, async (req, res): Pr
       .where(eq(applicationsTable.id, id))
       .returning();
     if (!app) { res.status(404).json({ error: "Application not found" }); return; }
+
     await sendLog(
       `✅ Application #${id} (**${app.discordUsername}**) accepted via web panel by **${req.user!.username}**`
     ).catch(() => {});
+
+    try {
+      const staffInvite = process.env["DISCORD_STAFF_SERVER_INVITE"] ?? "";
+      const user = await discordClient.users.fetch(app.discordId);
+      await user.send(
+        `🎉 Congratulations **${app.discordUsername}**! Your application for **${app.role}** has been **accepted**!\n\n` +
+        `Join the staff server here: ${staffInvite}`
+      );
+    } catch { /* DMs may be disabled */ }
+
     res.json({ ok: true, application: app });
   } catch (err) {
     logger.error({ err }, "Failed to accept application");

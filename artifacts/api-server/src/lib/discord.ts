@@ -261,7 +261,10 @@ discordClient.on("interactionCreate", async (interaction) => {
 
         try {
           const user = await discordClient.users.fetch(application.discordId);
-          await user.send(`🎉 Accepted for **${application.role}**`);
+          await user.send(
+            `🎉 Congratulations **${application.discordUsername}**! Your application for **${application.role}** has been **accepted**!\n\n` +
+            `Join the staff server here: ${STAFF_SERVER_INVITE}`
+          );
         } catch {}
 
         const embed = EmbedBuilder.from(
